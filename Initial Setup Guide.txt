@@ -1,0 +1,26 @@
+* Initial Setup Guide:
+
+1. Create conda env:
+
+conda create -n pong_exercise python=3.10.11
+
+2. Activate conda env:
+
+conda activate pong_exercise
+
+3. To set up your environment to run the code, first install all requirements:
+
+pip install -r requirements.txt
+
+4. Start the Servers: Open two terminal windows and start each instance on a different port.
+
+uvicorn pong_server:app --port 8000
+uvicorn pong_server:app --port 8001
+
+5. Control the Game with the CLI: Use the CLI to send commands to the servers.
+
+python pong-cli.py start 1000  # Start the game with 1 second between pongs
+python pong-cli.py pause       # Pause the game
+python pong-cli.py resume      # Resume the game
+python pong-cli.py stop        # Stop the game
+
