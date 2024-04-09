@@ -38,6 +38,7 @@ async def receive_ping(responsedata: ResponseData, background_tasks: BackgroundT
         background_tasks.add_task(send_ping)
     except Exception as e:
         print(f"Error sending ping: {e}")
+    return {"message": 200}
 
 
 async def send_ping():
