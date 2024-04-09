@@ -1,9 +1,9 @@
- from fastapi import FastAPI, BackgroundTasks
+from fastapi import FastAPI, BackgroundTasks
 from pydantic import BaseModel
-import requests
-
 import httpx
 import asyncio
+
+from enum import Enum
 
 app = FastAPI()
 
@@ -11,61 +11,58 @@ class StartGameRequest(BaseModel):
     target_url: str
     pong_delay: int
 
+class ResponseData(BaseModel):
+    response_url: str
+    
+
 next_server_url = None
 pong_time_ms = 1000  # Default value; can be updated via start command
-game_active = False
+game_active = True
 
 @app.post("/start/")
 async def start_game(request: StartGameRequest, background_tasks: BackgroundTasks):
-    global next_server_url, pong_time_ms, game_active
+    global next_server_url, pong_time_ms, game_active, server_state
     next_server_url = request.target_url
     pong_time_ms = request.pong_delay
     game_active = True
-    print(f"Game started: will ping {next_server_url} every {pong_time_ms} ms")
-
-    # Send the initial ping to kickstart the ping-pong exchange
     background_tasks.add_task(send_ping)
-
     return {"message": "Game started"}
 
 @app.post("/ping/")
-async def receive_ping():
-    print("Received ping, sending pong...")
-    # Here, you'd send a pong back to the original sender (which could be determined from the request data or headers)
-    # For simplicity, I'm assuming the original sender is always the server on port 8000
+async def receive_ping(responsedata: ResponseData, background_tasks: BackgroundTasks):
+    global next_server_url, server_state
+    server_state = ServerState.Ping
+    next_server_url = responsedata.response_url
+    print("Received ping, scheduling next ping...")
     try:
-        response = requests.post("http://localhost:8000/pong/")
-        if response.status_code == 200:
-            print("Pong sent successfully")
-        else:
-            print("Failed to send pong")
-    except Exception as e:
-        print(f"Error sending pong: {e}")
-        
-@app.post("/pong/")
-async def receive_pong(background_tasks: BackgroundTasks):
-    print("Received pong, scheduling next ping...")
-    if game_active:
         background_tasks.add_task(send_ping)
+    except Exception as e:
+        print(f"Error sending ping: {e}")
 
 
 async def send_ping():
+    global game_active, next_server_url
     if game_active:
         await asyncio.sleep(pong_time_ms / 1000)
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                print(f"Sending ping to {next_server_url}...")
-                response = await client.post(next_server_url + "/ping/")
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            try:
+                if '8000' in next_server_url:
+                    response_server_url = 'http://localhost:8001'
+                else:
+                    response_server_url = 'http://localhost:8000'
+                responsedata = ResponseData(response_url=response_server_url)
+                # Convert the Pydantic model to a dictionary
+                response_data_dict = responsedata.dict()
+                response = await client.post(f"{next_server_url}/ping/", json=response_data_dict)
                 response.raise_for_status()
                 print(f"Ping sent successfully to {next_server_url}")
-        except Exception as e:
-            print(f"Error sending ping to {next_server_url}: {e}")
+            except Exception as e:
+                print(f"Error sending ping: {e}")
 
 @app.post("/stop/")
 async def stop_game():
     global game_active
     game_active = False
-    print("Game stopped.")
     return {"message": "Game stopped"}
 
 @app.post("/pause/")
@@ -78,7 +75,5 @@ async def pause_game():
 async def resume_game(background_tasks: BackgroundTasks):
     global game_active
     game_active = True
-    print("Game resumed, sending ping...")
-    # Immediately kickstart the ping process again
     background_tasks.add_task(send_ping)
     return {"message": "Game resumed"}
